@@ -1,0 +1,7 @@
+.venv/
+.env
+last_state.json
+bot_offset.json
+__pycache__/
+*.pyc
+cron.log
