@@ -1,7 +1,7 @@
 ## Merge checklist
 
-1. **Grok agent review** — wait for the `Grok PR Review` check to pass
-2. **Your approval** — @Neha-github1125 must approve this PR (code owner)
-3. **Merge** — only after both steps above are green
-
-> PRs opened by @Neha-github1125 still need Grok review. You cannot approve your own PR on GitHub; have changes opened from another account/branch author when possible.
+1. **Grok agent review** — `Grok PR Review` check must pass
+2. **Human approval**
+   - PRs from others → **@Neha-github1125** must approve (code owner)
+   - PRs from **@rohitlncts** → can merge after Grok passes (no self-approval needed)
+3. **Merge** when all required checks are green
