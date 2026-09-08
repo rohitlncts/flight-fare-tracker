@@ -129,6 +129,21 @@ def main() -> int:
     token = os.environ["GITHUB_TOKEN"]
 
     if not os.getenv("XAI_API_KEY"):
+        msg = (
+            "## Grok agent review failed\n\n"
+            "**Reason:** `XAI_API_KEY` is not set in GitHub repository secrets.\n\n"
+            "**Fix:** Add your xAI API key at "
+            "https://console.x.ai → GitHub repo → Settings → Secrets → Actions → "
+            "`XAI_API_KEY`, then re-run this check."
+        )
+        try:
+            github_post(
+                f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
+                token,
+                {"body": msg},
+            )
+        except Exception:  # noqa: BLE001
+            pass
         print("Missing XAI_API_KEY secret")
         return 1
 
