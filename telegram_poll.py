@@ -100,7 +100,7 @@ def process_updates(token: str, allowed_chat_id: str) -> int:
             run_fare_check(token, chat_id, triggered_by="manual")
             checks_run += 1
 
-    if offset > load_offset():
+    if updates:
         save_offset(offset)
 
     return checks_run
