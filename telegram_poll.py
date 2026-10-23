@@ -29,19 +29,17 @@ load_dotenv()
 HELP_TEXT = (
     "✈️ *Flight Fare Tracker Bot*\n\n"
     "*Monitoring Controls:*\n"
+    "• `/status` — View current status and active routes\n"
     "• `/pause` — Pause automatic scheduled fare checks\n"
     "• `/resume` or `/run` — Resume automatic fare checks\n"
-    "• `/status` — View current status and active routes\n"
     "• `/check` — Check fares right now on-demand\n\n"
     "*Route Configuration:*\n"
     "• `/routes` or `/list` — List all configured routes\n"
     "• `/add <SRC> <DST> <START> [END]` — Monitor a route for a period\n"
-    "   _Example 1:_ `/add BLR DEL 2026-11-10 2026-11-15`\n"
-    "   _Example 2:_ `/add BOM GOI 2026-12-01`\n"
-    "• `/remove <SRC> <DST>` or `/remove <#>` — Remove a route\n"
-    "   _Example:_ `/remove BLR DEL` or `/remove 1`\n"
-    "• `/reset` — Reset to default routes\n"
-    "• `/clear` — Clear all monitored routes\n"
+    "   _Example:_ `/add PXN BLR 2027-01-05`\n"
+    "• `/delete <#>` or `/delete <SRC> <DST>` — Delete a route\n"
+    "   _Examples:_ `/delete 1` or `/delete 1 2` or `/delete BLR IXB`\n"
+    "• `/delete all` or `/clear` — Delete all monitored routes\n"
     "• `/help` — Show this guide\n\n"
     "_Scheduled checks run automatically every 6 hours when active._"
 )
@@ -153,7 +151,7 @@ def handle_routes_list(config: dict[str, Any]) -> str:
         lines.append(f"   🗓 {date_summary}")
 
     lines.append("\n• Add: `/add <SRC> <DST> <START> [END]`")
-    lines.append("• Remove: `/remove <number>` or `/remove <SRC> <DST>`")
+    lines.append("• Delete: `/delete <#>` (e.g. `/delete 1` or `/delete 1 2`) or `/delete <SRC> <DST>`")
     return "\n".join(lines)
 
 
@@ -319,45 +317,90 @@ def handle_add_route(text: str, config: dict[str, Any]) -> str:
     return "\n".join(res_lines)
 
 
-def handle_remove_route(text: str, config: dict[str, Any]) -> str:
-    """Parse and remove a route by index or by SRC DST."""
-    cleaned = re.sub(r"^/remove\b", "", text, flags=re.IGNORECASE).strip()
+def handle_delete_route(text: str, config: dict[str, Any]) -> str:
+    """Parse and delete routes by index, multiple indices, airport pair, or 'all'."""
+    # Remove command prefix (/delete, /del, /remove)
+    cleaned = re.sub(r"^/(delete|del|remove)\b", "", text, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"^(delete|del|remove)\b", "", cleaned, flags=re.IGNORECASE).strip()
     cleaned = re.sub(r"\b(to|from)\b", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.replace(",", " ").replace("->", " ").replace("—", " ")
     tokens = [t.strip() for t in cleaned.split() if t.strip()]
 
     routes = config.get("routes", [])
     if not routes:
-        return "⚠️ No routes currently configured."
+        return "⚠️ No routes currently configured to delete."
 
     if not tokens:
-        return "⚠️ Specify route number or airports to remove.\nExample: `/remove 1` or `/remove BLR DEL`."
+        return (
+            "ℹ️ *How to delete routes:*\n\n"
+            "• *By number:* `/delete 1` or `/delete 1 2`\n"
+            "• *By airports:* `/delete BLR IXB`\n"
+            "• *All routes:* `/delete all`\n\n"
+            "Send `/routes` to view your numbered route list."
+        )
 
-    # Check if index number
-    if len(tokens) == 1 and tokens[0].isdigit():
-        idx = int(tokens[0])
-        if 1 <= idx <= len(routes):
-            removed = routes.pop(idx - 1)
+    # 1. Check if 'all'
+    if len(tokens) == 1 and tokens[0].lower() == "all":
+        count = len(routes)
+        config["routes"] = []
+        state_manager.save_config(config)
+        return f"🗑 *All {count} monitored routes deleted.*\nAdd new routes anytime with `/add`."
+
+    # 2. Check if all tokens are digits
+    if all(t.isdigit() for t in tokens):
+        indices = sorted(list(set(int(t) for t in tokens)), reverse=True)
+        removed_items = []
+        invalid_nums = []
+
+        for idx in indices:
+            if 1 <= idx <= len(routes):
+                removed = routes.pop(idx - 1)
+                s = state_manager.get_airport_name(removed.get("from", ""))
+                d = state_manager.get_airport_name(removed.get("to", ""))
+                removed_items.append(f"#{idx}: *{s} → {d}*")
+            else:
+                invalid_nums.append(f"#{idx}")
+
+        if removed_items:
             state_manager.save_config(config)
-            s = state_manager.get_airport_name(removed.get("from", ""))
-            d = state_manager.get_airport_name(removed.get("to", ""))
-            return f"🗑 Removed route #{idx}: *{s} → {d}*.\nRemaining routes: {len(routes)}."
-        return f"⚠️ Invalid route number #{idx}. You have {len(routes)} routes. Use `/routes` to see list."
+            res = f"🗑 *Deleted {len(removed_items)} route(s):*\n" + "\n".join(f"• {item}" for item in reversed(removed_items))
+            res += f"\n\nRemaining monitored routes: *{len(routes)}*."
+            if invalid_nums:
+                res += f"\n_Note: Invalid route numbers ignored: {', '.join(invalid_nums)}._"
+            return res
+        return f"⚠️ Invalid route numbers. You have {len(routes)} routes. Use `/routes` to see list."
 
-    # Otherwise match SRC DST
-    if len(tokens) >= 2:
-        src = tokens[0].upper()
-        dst = tokens[1].upper()
+    # 3. Match airport pairs (e.g. BLR IXB)
+    if len(tokens) >= 2 and all(len(t) == 3 and t.isalpha() for t in tokens[:2]):
+        src_raw = tokens[0].upper()
+        dst_raw = tokens[1].upper()
+        src = AIRPORT_ALIASES.get(src_raw, src_raw)
+        dst = AIRPORT_ALIASES.get(dst_raw, dst_raw)
+
         initial_len = len(routes)
         config["routes"] = [
             r for r in routes
             if not (r.get("from", "").upper() == src and r.get("to", "").upper() == dst)
         ]
-        if len(config["routes"]) < initial_len:
+        deleted_count = initial_len - len(config["routes"])
+        if deleted_count > 0:
             state_manager.save_config(config)
-            return f"🗑 Removed route *{src} → {dst}*.\nRemaining routes: {len(config['routes'])}."
+            s_name = state_manager.get_airport_name(src)
+            d_name = state_manager.get_airport_name(dst)
+            return f"🗑 Deleted route *{s_name} → {d_name}*.\nRemaining monitored routes: *{len(config['routes'])}*."
         return f"⚠️ No route matching *{src} → {dst}* found. Use `/routes` to see active routes."
 
-    return "⚠️ Usage: `/remove <number>` or `/remove <SRC> <DST>`."
+    return (
+        "⚠️ *Invalid delete format.*\n\n"
+        "Usage:\n"
+        "• `/delete <#>` (e.g. `/delete 1` or `/delete 1 2`)\n"
+        "• `/delete <SRC> <DST>` (e.g. `/delete BLR IXB`)\n"
+        "• `/delete all`"
+    )
+
+
+# Alias for backwards compatibility
+handle_remove_route = handle_delete_route
 
 
 def process_updates(token: str, allowed_chat_id: str) -> int:
@@ -453,10 +496,10 @@ def process_updates(token: str, allowed_chat_id: str) -> int:
             send_telegram(token, chat_id, reply)
             continue
 
-        # 7. Remove Route
-        if cmd == "/remove" or norm.startswith("remove "):
-            acknowledge_command(token, chat_id, text, "Locating and removing requested route from monitoring list…")
-            reply = handle_remove_route(text, config)
+        # 7. Delete / Remove Route
+        if cmd in {"/delete", "/del", "/remove"} or norm.startswith(("delete ", "del ", "remove ")):
+            acknowledge_command(token, chat_id, text, "Locating and deleting requested route(s)…")
+            reply = handle_delete_route(text, config)
             send_telegram(token, chat_id, reply)
             continue
 
