@@ -18,6 +18,18 @@
       "to": "PXN",
       "start_date": "2026-11-10",
       "end_date": "2026-11-13"
+    },
+    {
+      "from": "PXN",
+      "to": "BLR",
+      "start_date": "2027-01-05",
+      "end_date": "2027-01-05"
+    },
+    {
+      "from": "DBR",
+      "to": "BLR",
+      "start_date": "2027-01-05",
+      "end_date": "2027-01-05"
     }
   ],
   "discount_hints": {
