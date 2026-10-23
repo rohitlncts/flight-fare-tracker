@@ -1,38 +1,26 @@
 #!/usr/bin/env python3
-"""Check BLR flight fares and send updates via Telegram."""
+"""Check flight fares and send updates via Telegram.
+
+Supports dynamic multi-route and date range monitoring with run/pause controls.
+"""
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
 from dotenv import load_dotenv
 from fast_flights import FlightQuery, Passengers, create_query, get_flights
 
+import state_manager
+
 load_dotenv()
 
 IST = ZoneInfo("Asia/Kolkata")
-STATE_FILE = Path(__file__).with_name("last_state.json")
-
-ROUTES = {
-    "IXB": "Bagdogra",
-    "DBR": "Darbhanga",
-    "PXN": "Purnia",
-}
-
-DATES = ["2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]
-
-DISCOUNT_HINTS = {
-    "IXB": "Cleartrip + Axis AXISCC (~₹1,090 off) or EMTFIRST on EaseMyTrip",
-    "DBR": "Cleartrip + Axis AXISCC (~₹1,500 off)",
-    "PXN": "Book direct on IndiGo/Star Air; check EMTFIRST on EaseMyTrip",
-}
 
 CHECK_NOW_TRIGGERS = {
     "/check",
@@ -42,8 +30,37 @@ CHECK_NOW_TRIGGERS = {
     "check",
 }
 
+PAUSE_TRIGGERS = {
+    "/pause",
+    "pause",
+    "/stop",
+    "stop",
+}
+
+RESUME_TRIGGERS = {
+    "/resume",
+    "resume",
+    "/run",
+    "run",
+    "/start_monitor",
+    "start monitor",
+}
+
+STATUS_TRIGGERS = {
+    "/status",
+    "status",
+}
+
+ROUTES_TRIGGERS = {
+    "/routes",
+    "routes",
+    "/list",
+    "list",
+}
+
 
 def fetch_cheapest(from_airport: str, to_airport: str, date: str) -> dict | None:
+    """Fetch cheapest flight between two airports for a date using fast-flights."""
     query = create_query(
         flights=[
             FlightQuery(date=date, from_airport=from_airport, to_airport=to_airport)
@@ -71,17 +88,8 @@ def fetch_cheapest(from_airport: str, to_airport: str, date: str) -> dict | None
     }
 
 
-def load_state() -> dict:
-    if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text())
-    return {}
-
-
-def save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, indent=2))
-
-
 def send_telegram(token: str, chat_id: str | int, text: str) -> None:
+    """Send text message to Telegram chat."""
     resp = requests.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
         json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
@@ -94,73 +102,114 @@ def send_telegram(token: str, chat_id: str | int, text: str) -> None:
 
 
 def format_inr(amount: int) -> str:
+    """Format integer as INR currency."""
     return f"₹{amount:,}"
 
 
-def build_message(results: dict, previous: dict, triggered_by: str | None = None) -> str:
+def build_message(
+    results: dict,
+    previous: dict,
+    routes: list[dict],
+    hints: dict[str, str],
+    *,
+    is_paused: bool,
+    triggered_by: str | None = None,
+) -> str:
+    """Build formatted Telegram fare update message."""
     now = datetime.now(IST).strftime("%d %b %Y, %I:%M %p IST")
-    header = "✈️ BLR fare update"
+    header = "✈️ Flight Fare Update"
     if triggered_by == "manual":
-        header += " (check now)"
+        header += " (manual check)"
     lines = [f"{header} ({now})", ""]
 
-    best_key = None
-    best_price = None
+    if not routes:
+        lines.append("⚠️ No routes configured for monitoring.")
+        lines.append("Use /add <SRC> <DST> <START_DATE> [END_DATE] to add routes.")
+        return "\n".join(lines)
 
-    for code, name in ROUTES.items():
-        lines.append(f"📍 {name} ({code})")
-        for date in DATES:
-            key = f"{code}:{date}"
+    best_fare_overall = None
+    best_route_overall = None
+
+    for route in routes:
+        src = route.get("from", "").strip().upper()
+        dst = route.get("to", "").strip().upper()
+        route_dates = state_manager.expand_route_dates(route)
+        if not src or not dst or not route_dates:
+            continue
+
+        src_label = state_manager.get_airport_name(src)
+        dst_label = state_manager.get_airport_name(dst)
+        lines.append(f"📍 {src_label} → {dst_label}")
+
+        for date_str in route_dates:
+            key = f"{src}:{dst}:{date_str}"
             entry = results.get(key)
-            day = datetime.strptime(date, "%Y-%m-%d").strftime("%d %b")
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                day_label = dt.strftime("%d %b (%a)")
+            except ValueError:
+                day_label = date_str
 
             if not entry:
-                lines.append(f"  {day}: no data")
+                lines.append(f"  • {day_label}: no data")
                 continue
             if "error" in entry:
-                lines.append(f"  {day}: error ({entry['error'][:60]})")
+                err_msg = entry["error"][:50]
+                lines.append(f"  • {day_label}: error ({err_msg})")
                 continue
 
             price = entry["price"]
             stop_label = "nonstop" if entry["stops"] == 0 else f"{entry['stops']} stop"
-            line = f"  {day}: {format_inr(price)} ({entry['airline']}, {stop_label})"
+            line = f"  • {day_label}: {format_inr(price)} ({entry['airline']}, {stop_label})"
 
+            # Compare with previous state
             old = previous.get(key, {}).get("price")
-            if old is not None and price < old:
-                line += f"  ↓ {format_inr(old - price)}"
-            elif old is not None and price > old:
-                line += f"  ↑ {format_inr(price - old)}"
+            if old is not None:
+                if price < old:
+                    line += f"  ↓ {format_inr(old - price)}"
+                elif price > old:
+                    line += f"  ↑ {format_inr(price - old)}"
 
             lines.append(line)
 
-            if best_price is None or price < best_price:
-                best_price = price
-                best_key = (code, date, entry)
+            if best_fare_overall is None or price < best_fare_overall["price"]:
+                best_fare_overall = {
+                    "price": price,
+                    "date": day_label,
+                    "airline": entry["airline"],
+                }
+                best_route_overall = f"{src} → {dst}"
 
-        lines.append(f"  💡 {DISCOUNT_HINTS[code]}")
+        # Route discount hint if available
+        hint = hints.get(dst) or hints.get(f"{src}:{dst}")
+        if hint:
+            lines.append(f"  💡 {hint}")
         lines.append("")
 
-    if best_key:
-        code, date, entry = best_key
-        day = datetime.strptime(date, "%Y-%m-%d").strftime("%d %b")
+    if best_fare_overall and best_route_overall:
         lines.append(
-            f"🏆 Best: {ROUTES[code]} on {day} at {format_inr(entry['price'])}"
+            f"🏆 Cheapest: {best_route_overall} on {best_fare_overall['date']} at {format_inr(best_fare_overall['price'])} ({best_fare_overall['airline']})"
         )
+        lines.append("")
 
-    lines.append("")
-    lines.append("Purnia airport code: PXN (IATA).")
-    lines.append("Send /check or 'check now' anytime for a fresh lookup.")
+    status_str = "⏸ Paused" if is_paused else "🟢 Active (auto-checks every 6h)"
+    lines.append(f"Monitoring: {status_str}")
+    lines.append("Commands: /pause | /resume | /add | /routes | /help")
     return "\n".join(lines)
 
 
-def collect_fares() -> dict[str, dict]:
+def collect_fares(routes: list[dict]) -> dict[str, dict]:
+    """Collect fares for all configured routes and their expanded dates."""
     results: dict[str, dict] = {}
-    for code in ROUTES:
-        for date in DATES:
-            key = f"{code}:{date}"
-            print(f"Checking BLR → {code} on {date}...")
-            results[key] = fetch_cheapest("BLR", code, date)
-            time.sleep(1.5)
+    for route in routes:
+        src = route.get("from", "").strip().upper()
+        dst = route.get("to", "").strip().upper()
+        dates = state_manager.expand_route_dates(route)
+        for date_str in dates:
+            key = f"{src}:{dst}:{date_str}"
+            print(f"Checking {src} → {dst} on {date_str}...")
+            results[key] = fetch_cheapest(src, dst, date_str)
+            time.sleep(1.2)
     return results
 
 
@@ -171,13 +220,41 @@ def run_fare_check(
     triggered_by: str | None = None,
     notify: bool = True,
 ) -> str:
-    previous = load_state()
-    results = collect_fares()
-    message = build_message(results, previous, triggered_by=triggered_by)
+    """Run fare check, save state, and optionally notify via Telegram."""
+    config = state_manager.load_config()
+    is_paused = bool(config.get("is_paused", False))
+
+    # If scheduled run and monitoring is paused, skip check
+    if is_paused and triggered_by != "manual":
+        msg = "Flight fare monitoring is currently PAUSED. Skipping scheduled check."
+        print(f"[check_fares] {msg}")
+        return msg
+
+    routes = config.get("routes", [])
+    hints = config.get("discount_hints", {})
+    previous = state_manager.load_state()
+
+    results = collect_fares(routes)
+    message = build_message(
+        results,
+        previous,
+        routes,
+        hints,
+        is_paused=is_paused,
+        triggered_by=triggered_by,
+    )
     print("\n" + message + "\n")
+
     if notify:
         send_telegram(token, chat_id, message)
-    save_state(results)
+
+    # Persist state and timestamp
+    merged_state = {**previous, **results}
+    state_manager.save_state(merged_state)
+
+    config["last_checked_at"] = datetime.now(IST).isoformat()
+    state_manager.save_config(config)
+
     return message
 
 
@@ -186,11 +263,10 @@ def main() -> int:
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
     if not token:
-        print("Missing TELEGRAM_BOT_TOKEN in .env")
+        print("Missing TELEGRAM_BOT_TOKEN in .env or environment")
         return 1
     if not chat_id:
-        print("Missing TELEGRAM_CHAT_ID in .env")
-        print("Message your bot on Telegram, then run: python get_chat_id.py")
+        print("Missing TELEGRAM_CHAT_ID in .env or environment")
         return 1
 
     run_fare_check(token, chat_id)
