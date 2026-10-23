@@ -136,6 +136,14 @@ class TestTelegramPoll(unittest.TestCase):
         self.assertIn("Removed route #1", msg)
         self.assertEqual(len(self.config["routes"]), 0)
 
+    @patch("telegram_poll.send_telegram")
+    def test_acknowledge_command(self, mock_send):
+        telegram_poll.acknowledge_command("token", "12345", "/pause", "Suspending checks")
+        mock_send.assert_called_once()
+        args = mock_send.call_args[0]
+        self.assertIn("Processing:* `/pause`", args[2])
+        self.assertIn("Executing:* _Suspending checks_", args[2])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -39,7 +39,10 @@ Send commands to your Telegram bot ([@NR_Flighttrackerbot](https://t.me/NR_Fligh
    - `check-fares.yml`: Scheduled fare checks at 6 AM, 12 PM, 6 PM, 12 AM IST (every 6 hours). Skips automatically when monitoring is paused.
    - `telegram-poll.yml`: Scheduled command poller running every 5 minutes to process incoming Telegram commands.
 
-3. **Fare Comparison**:
+3. **Immediate Command Execution Feedback**:
+   - On every command received, the bot immediately acknowledges with an intent message (e.g. `🤖 Processing: /add ... ⏳ Executing: Validating route details...`) before performing the action and sending the result.
+
+4. **Fare Comparison**:
    - Compares live Google Flights data (via `fast-flights`) against last recorded prices.
    - Highlights price drops (`↓ ₹500`), increases (`↑ ₹200`), airlines, and non-stop vs 1-stop flights.
 

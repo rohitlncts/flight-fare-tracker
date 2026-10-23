@@ -51,6 +51,18 @@ def normalize_command(text: str) -> str:
     return text.strip().lower()
 
 
+def acknowledge_command(token: str, chat_id: str | int, command: str, action_desc: str) -> None:
+    """Send immediate acknowledgement describing what command was received and what is about to execute."""
+    display_cmd = command.strip()
+    if len(display_cmd) > 50:
+        display_cmd = display_cmd[:47] + "…"
+    msg = f"🤖 *Processing:* `{display_cmd}`\n⏳ *Executing:* _{action_desc}_"
+    try:
+        send_telegram(token, chat_id, msg)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[telegram_poll] Warning: Could not send command acknowledgement: {exc}")
+
+
 def fetch_updates(token: str, offset: int) -> list[dict]:
     """Fetch unhandled updates from Telegram."""
     resp = requests.get(
@@ -316,17 +328,20 @@ def process_updates(token: str, allowed_chat_id: str) -> int:
 
         # 1. Help / Start
         if norm in {"/help", "help", "/start", "start"}:
+            acknowledge_command(token, chat_id, text, "Loading command list and usage guide…")
             send_telegram(token, chat_id, HELP_TEXT)
             continue
 
         # 2. Status
         if norm in STATUS_TRIGGERS or cmd == "/status":
+            acknowledge_command(token, chat_id, text, "Querying bot monitoring state, active routes, and last check timestamp…")
             reply = handle_status(config, last_state)
             send_telegram(token, chat_id, reply)
             continue
 
         # 3. Pause
         if norm in PAUSE_TRIGGERS or cmd in {"/pause", "/stop"}:
+            acknowledge_command(token, chat_id, text, "Suspending automatic scheduled 6-hour fare checks…")
             config["is_paused"] = True
             state_manager.save_config(config)
             send_telegram(
@@ -341,6 +356,7 @@ def process_updates(token: str, allowed_chat_id: str) -> int:
 
         # 4. Resume / Run
         if norm in RESUME_TRIGGERS or cmd in {"/resume", "/run", "/start_monitor"}:
+            acknowledge_command(token, chat_id, text, "Reactivating automated 6-hour fare checks…")
             config["is_paused"] = False
             state_manager.save_config(config)
             route_count = len(config.get("routes", []))
@@ -356,24 +372,28 @@ def process_updates(token: str, allowed_chat_id: str) -> int:
 
         # 5. List Routes
         if norm in ROUTES_TRIGGERS or cmd in {"/routes", "/list"}:
+            acknowledge_command(token, chat_id, text, "Retrieving all active monitored routes and date periods…")
             reply = handle_routes_list(config)
             send_telegram(token, chat_id, reply)
             continue
 
         # 6. Add Route
         if cmd == "/add" or norm.startswith("add "):
+            acknowledge_command(token, chat_id, text, "Validating route details and updating flight monitoring configuration…")
             reply = handle_add_route(text, config)
             send_telegram(token, chat_id, reply)
             continue
 
         # 7. Remove Route
         if cmd == "/remove" or norm.startswith("remove "):
+            acknowledge_command(token, chat_id, text, "Locating and removing requested route from monitoring list…")
             reply = handle_remove_route(text, config)
             send_telegram(token, chat_id, reply)
             continue
 
         # 8. Reset to default routes
         if norm in {"/reset", "reset"}:
+            acknowledge_command(token, chat_id, text, "Resetting flight routes back to default configuration (Bagdogra, Darbhanga, Purnia)…")
             config["routes"] = [
                 {
                     "from": "BLR",
@@ -405,6 +425,7 @@ def process_updates(token: str, allowed_chat_id: str) -> int:
 
         # 9. Clear all routes
         if norm in {"/clear", "clear"}:
+            acknowledge_command(token, chat_id, text, "Clearing all monitored flight routes from configuration…")
             config["routes"] = []
             state_manager.save_config(config)
             send_telegram(
@@ -417,7 +438,7 @@ def process_updates(token: str, allowed_chat_id: str) -> int:
 
         # 10. Check Now (Manual)
         if norm in CHECK_NOW_TRIGGERS or cmd == "/check" or cmd == "/checknow":
-            send_telegram(token, chat_id, "🔍 Checking fares for configured routes now…")
+            acknowledge_command(token, chat_id, text, "Triggering immediate on-demand fare check across all configured routes…")
             run_fare_check(token, chat_id, triggered_by="manual")
             checks_run += 1
             continue
