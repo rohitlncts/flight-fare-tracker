@@ -1,0 +1,60 @@
+{
+  "BLR:IXB:2026-11-10": {
+    "price": 16016,
+    "airline": "Air India Express",
+    "stops": 1
+  },
+  "BLR:IXB:2026-11-11": {
+    "price": 11626,
+    "airline": "IndiGo",
+    "stops": 1
+  },
+  "BLR:IXB:2026-11-12": {
+    "price": 11655,
+    "airline": "Air India Express",
+    "stops": 1
+  },
+  "BLR:IXB:2026-11-13": {
+    "price": 14043,
+    "airline": "SpiceJet",
+    "stops": 1
+  },
+  "BLR:DBR:2026-11-10": {
+    "price": 19104,
+    "airline": "Akasa Air",
+    "stops": 0
+  },
+  "BLR:DBR:2026-11-11": {
+    "price": 28355,
+    "airline": "SpiceJet",
+    "stops": 1
+  },
+  "BLR:DBR:2026-11-12": {
+    "price": 29844,
+    "airline": "SpiceJet",
+    "stops": 1
+  },
+  "BLR:DBR:2026-11-13": {
+    "price": 18272,
+    "airline": "Akasa Air",
+    "stops": 0
+  },
+  "BLR:PXN:2026-11-10": {
+    "price": 19185,
+    "airline": "IndiGo",
+    "stops": 1
+  },
+  "BLR:PXN:2026-11-11": {
+    "price": 18801,
+    "airline": "IndiGo",
+    "stops": 1
+  },
+  "BLR:PXN:2026-11-12": {
+    "error": "'NoneType' object is not subscriptable"
+  },
+  "BLR:PXN:2026-11-13": {
+    "price": 20796,
+    "airline": "IndiGo",
+    "stops": 1
+  }
+}
