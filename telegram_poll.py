@@ -157,97 +157,166 @@ def handle_routes_list(config: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def handle_add_route(text: str, config: dict[str, Any]) -> str:
-    """Parse and add a new route: /add SRC DST START [END]."""
-    # Remove command prefix and noise words
-    cleaned = re.sub(r"^/add\b", "", text, flags=re.IGNORECASE).strip()
-    # Replace noise words like 'to', 'from', '->', '-' with space
+AIRPORT_ALIASES: dict[str, str] = {
+    "PNX": "PXN",  # Common typo for Purnia (PXN)
+    "BGL": "BLR",  # Common typo for Bengaluru
+    "PNA": "PNQ",  # Common typo for Pune
+}
+
+
+def parse_single_add_line(line: str) -> tuple[dict | None, str | None, str | None]:
+    """Parse one line of add route input.
+
+    Returns (route_dict, note, error_message).
+    """
+    cleaned = re.sub(r"^/add\b", "", line, flags=re.IGNORECASE).strip()
     cleaned = re.sub(r"\b(to|from)\b", " ", cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.replace("->", " ").replace("—", " ")
     tokens = [t.strip() for t in cleaned.split() if t.strip()]
 
-    if len(tokens) < 3:
-        return (
-            "⚠️ *Invalid format.*\n\n"
-            "Usage:\n"
-            "`/add <SRC> <DST> <START_DATE> [END_DATE]`\n\n"
-            "Examples:\n"
-            "• `/add BLR DEL 2026-11-10 2026-11-15`\n"
-            "• `/add BOM GOI 2026-12-01`"
-        )
+    if not tokens:
+        return None, None, None
 
-    src = tokens[0].upper()
-    dst = tokens[1].upper()
+    if len(tokens) < 3:
+        return None, None, f"Need at least SRC DST START_DATE in: `{line[:30]}`"
+
+    src_raw = tokens[0].upper()
+    dst_raw = tokens[1].upper()
+
+    note_parts = []
+    src = AIRPORT_ALIASES.get(src_raw, src_raw)
+    dst = AIRPORT_ALIASES.get(dst_raw, dst_raw)
+    if src != src_raw:
+        note_parts.append(f"mapped {src_raw} → {src}")
+    if dst != dst_raw:
+        note_parts.append(f"mapped {dst_raw} → {dst}")
 
     if len(src) != 3 or not src.isalpha() or len(dst) != 3 or not dst.isalpha():
-        return "⚠️ *Invalid airport code.* Please use 3-letter IATA codes (e.g. BLR, DEL, BOM, IXB)."
+        return None, None, f"Invalid airport code in `{line[:30]}`. Use 3-letter IATA codes."
 
     if src == dst:
-        return "⚠️ Source and destination airports must be different."
+        return None, None, f"Source and destination must be different in `{line[:30]}`."
 
     start_date = state_manager.parse_date(tokens[2])
     if not start_date:
-        return f"⚠️ Could not parse start date `{tokens[2]}`. Use format `YYYY-MM-DD` or `DD-MM-YYYY`."
+        return None, None, f"Invalid start date `{tokens[2]}` (use YYYY-MM-DD or DD-MM-YYYY)."
 
     end_date = start_date
     if len(tokens) >= 4:
         parsed_end = state_manager.parse_date(tokens[3])
         if not parsed_end:
-            return f"⚠️ Could not parse end date `{tokens[3]}`. Use format `YYYY-MM-DD` or `DD-MM-YYYY`."
+            return None, None, f"Invalid end date `{tokens[3]}` (use YYYY-MM-DD or DD-MM-YYYY)."
         end_date = parsed_end
 
     if end_date < start_date:
-        return "⚠️ End date cannot be before start date."
+        return None, None, f"End date cannot be before start date in `{line[:30]}`."
 
-    # Max 14 days per route query to avoid timeouts
     max_days = 14
     days_count = (end_date - start_date).days + 1
     if days_count > max_days:
         end_date = start_date + timedelta(days=max_days - 1)
-        truncated_note = f"\n_Note: Limited to {max_days} days to prevent query timeouts._"
-    else:
-        truncated_note = ""
+        note_parts.append(f"limited to {max_days} days")
 
     start_iso = start_date.strftime("%Y-%m-%d")
     end_iso = end_date.strftime("%Y-%m-%d")
+    note = ", ".join(note_parts) if note_parts else None
+
+    route_info = {
+        "from": src,
+        "to": dst,
+        "start_date": start_iso,
+        "end_date": end_iso,
+        "_start_obj": start_date,
+        "_end_obj": end_date,
+    }
+    return route_info, note, None
+
+
+def handle_add_route(text: str, config: dict[str, Any]) -> str:
+    """Parse and add one or multiple routes (supports multi-line input)."""
+    lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
+
+    # If user sent just '/add' or 'add' alone
+    if len(lines) == 1 and lines[0].lower() in {"/add", "add"}:
+        return (
+            "ℹ️ *How to add routes:*\n\n"
+            "Format:\n"
+            "`/add <SRC> <DST> <START_DATE> [END_DATE]`\n\n"
+            "Examples:\n"
+            "• `/add BLR DEL 2026-11-10 2026-11-15`\n"
+            "• `/add BOM GOI 2026-12-01`\n"
+            "• `/add PXN BLR 2027-01-05` (Purnia to BLR)\n\n"
+            "💡 _You can also paste multiple /add lines at once!_"
+        )
 
     routes = config.setdefault("routes", [])
+    added_list: list[str] = []
+    errors: list[str] = []
 
-    # Update existing route if present, otherwise append
-    updated = False
-    for r in routes:
-        if r.get("from", "").upper() == src and r.get("to", "").upper() == dst:
-            r["start_date"] = start_iso
-            r["end_date"] = end_iso
-            r.pop("dates", None)
-            updated = True
-            break
+    for line in lines:
+        if line.lower() in {"/add", "add"}:
+            continue
+        r_info, note, err = parse_single_add_line(line)
+        if err:
+            errors.append(err)
+            continue
+        if not r_info:
+            continue
 
-    if not updated:
-        routes.append({
-            "from": src,
-            "to": dst,
-            "start_date": start_iso,
-            "end_date": end_iso,
-        })
+        src = r_info["from"]
+        dst = r_info["to"]
+        start_iso = r_info["start_date"]
+        end_iso = r_info["end_date"]
+        start_obj = r_info["_start_obj"]
+        end_obj = r_info["_end_obj"]
+
+        updated = False
+        for existing in routes:
+            if existing.get("from", "").upper() == src and existing.get("to", "").upper() == dst:
+                existing["start_date"] = start_iso
+                existing["end_date"] = end_iso
+                existing.pop("dates", None)
+                updated = True
+                break
+
+        if not updated:
+            routes.append({
+                "from": src,
+                "to": dst,
+                "start_date": start_iso,
+                "end_date": end_iso,
+            })
+
+        s_name = state_manager.get_airport_name(src)
+        d_name = state_manager.get_airport_name(dst)
+        d_start_fmt = start_obj.strftime("%d %b %Y")
+        d_end_fmt = end_obj.strftime("%d %b %Y")
+        period_str = f"{d_start_fmt} to {d_end_fmt}" if start_obj != end_obj else d_start_fmt
+        day_count = (end_obj - start_obj).days + 1
+
+        item_text = f"📍 *{s_name} → {d_name}*\n   🗓 Period: {period_str} ({day_count} date{'s' if day_count > 1 else ''})"
+        if note:
+            item_text += f"\n   _{note}_"
+        added_list.append(item_text)
+
+    if not added_list and errors:
+        return "⚠️ *Error adding route:*\n" + "\n".join(f"• {e}" for e in errors)
 
     state_manager.save_config(config)
 
-    s_name = state_manager.get_airport_name(src)
-    d_name = state_manager.get_airport_name(dst)
-    d_start_fmt = start_date.strftime("%d %b %Y")
-    d_end_fmt = end_date.strftime("%d %b %Y")
-    period_str = f"{d_start_fmt} to {d_end_fmt}" if start_date != end_date else d_start_fmt
+    res_lines = [f"✅ *Successfully Saved {len(added_list)} Route(s)!*\n"]
+    for i, itm in enumerate(added_list, 1):
+        prefix = f"{i}. " if len(added_list) > 1 else ""
+        res_lines.append(f"{prefix}{itm}")
 
-    action = "Updated" if updated else "Added"
-    return (
-        f"✅ *{action} Route!*\n\n"
-        f"📍 *{s_name} → {d_name}*\n"
-        f"🗓 *Period:* {period_str} ({(end_date - start_date).days + 1} dates)"
-        f"{truncated_note}\n\n"
-        f"Total monitored routes: {len(routes)}.\n"
-        "Send `/check` to test fare lookup now."
-    )
+    if errors:
+        res_lines.append("\n⚠️ *Warnings/Errors:*")
+        for e in errors:
+            res_lines.append(f"• {e}")
+
+    res_lines.append(f"\nTotal monitored routes: *{len(routes)}*.")
+    res_lines.append("Send `/routes` to view all or `/check` to test fares now.")
+    return "\n".join(res_lines)
 
 
 def handle_remove_route(text: str, config: dict[str, Any]) -> str:

@@ -108,7 +108,7 @@ class TestTelegramPoll(unittest.TestCase):
     @patch("state_manager.save_config")
     def test_handle_add_route(self, mock_save):
         msg = telegram_poll.handle_add_route("/add BLR DEL 2026-11-10 2026-11-15", self.config)
-        self.assertIn("Added Route", msg)
+        self.assertIn("Successfully Saved 1 Route", msg)
         self.assertEqual(len(self.config["routes"]), 2)
         added = self.config["routes"][1]
         self.assertEqual(added["from"], "BLR")
@@ -119,16 +119,30 @@ class TestTelegramPoll(unittest.TestCase):
     @patch("state_manager.save_config")
     def test_handle_add_route_with_noise_words(self, mock_save):
         msg = telegram_poll.handle_add_route("/add BOM to GOI from 2026-12-01 to 2026-12-05", self.config)
-        self.assertIn("Added Route", msg)
+        self.assertIn("Successfully Saved 1 Route", msg)
         self.assertEqual(len(self.config["routes"]), 2)
         added = self.config["routes"][1]
         self.assertEqual(added["from"], "BOM")
         self.assertEqual(added["to"], "GOI")
 
     @patch("state_manager.save_config")
+    def test_handle_add_route_multiline_and_alias(self, mock_save):
+        text = "/add PNX BLR 2027-01-05\n/add DBR BLR 2027-01-05"
+        msg = telegram_poll.handle_add_route(text, self.config)
+        self.assertIn("Successfully Saved 2 Route", msg)
+        self.assertIn("mapped PNX → PXN", msg)
+        self.assertEqual(len(self.config["routes"]), 3)
+        self.assertEqual(self.config["routes"][1]["from"], "PXN")
+        self.assertEqual(self.config["routes"][2]["from"], "DBR")
+
+    @patch("state_manager.save_config")
     def test_handle_add_route_invalid(self, mock_save):
         msg = telegram_poll.handle_add_route("/add BOMBAY DELHI", self.config)
-        self.assertIn("Invalid", msg)
+        self.assertIn("Error adding route", msg)
+
+    def test_handle_add_route_empty(self):
+        msg = telegram_poll.handle_add_route("/add", self.config)
+        self.assertIn("How to add routes", msg)
 
     @patch("state_manager.save_config")
     def test_handle_remove_route(self, mock_save):
