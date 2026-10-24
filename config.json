@@ -1,1 +1,22 @@
-{"is_paused":false,"routes":[{"from":"PXN","to":"BLR","start_date":"2027-01-05","end_date":"2027-01-05"},{"from":"DBR","to":"BLR","start_date":"2027-01-05","end_date":"2027-01-05"}],"discount_hints":{"PXN":"Book direct on IndiGo/Star Air; check EMTFIRST on EaseMyTrip","DBR":"Cleartrip + Axis AXISCC (~₹1,500 off)"},"last_checked_at":null}
+{
+  "is_paused": false,
+  "routes": [
+    {
+      "from": "PXN",
+      "to": "BLR",
+      "start_date": "2027-01-05",
+      "end_date": "2027-01-05"
+    },
+    {
+      "from": "DBR",
+      "to": "BLR",
+      "start_date": "2027-01-05",
+      "end_date": "2027-01-05"
+    }
+  ],
+  "discount_hints": {
+    "PXN": "Book direct on IndiGo/Star Air; check EMTFIRST on EaseMyTrip",
+    "DBR": "Cleartrip + Axis AXISCC (~\u20b91,500 off)"
+  },
+  "last_checked_at": "2026-10-25T02:33:03.883387+05:30"
+}
