@@ -23,9 +23,8 @@ Send commands to your Telegram bot ([@NR_Flighttrackerbot](https://t.me/NR_Fligh
 |---|---|---|
 | `/routes` or `/list` | List all currently monitored routes and date ranges | `/routes` |
 | `/add <SRC> <DST> <START> [END]` | Add or update a monitored route for a period | `/add BLR DEL 2026-11-10 2026-11-15` |
-| `/remove <#>` or `/remove <SRC> <DST>` | Remove a monitored route by number or airport pair | `/remove 1` or `/remove BLR DEL` |
-| `/clear` | Clear all monitored routes | `/clear` |
-| `/reset` | Restore default routes | `/reset` |
+| `/delete <#>` or `/delete <SRC> <DST>` | Delete route by number, multiple numbers, or airport pair | `/delete 1` or `/delete 1 2` or `/delete BLR DEL` |
+| `/delete all` or `/clear` | Delete all monitored routes | `/delete all` |
 
 ---
 

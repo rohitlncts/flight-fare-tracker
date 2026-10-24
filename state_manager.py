@@ -27,31 +27,8 @@ STATE_BRANCH = "bot-state"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "is_paused": False,
-    "routes": [
-        {
-            "from": "BLR",
-            "to": "IXB",
-            "start_date": "2026-11-10",
-            "end_date": "2026-11-13",
-        },
-        {
-            "from": "BLR",
-            "to": "DBR",
-            "start_date": "2026-11-10",
-            "end_date": "2026-11-13",
-        },
-        {
-            "from": "BLR",
-            "to": "PXN",
-            "start_date": "2026-11-10",
-            "end_date": "2026-11-13",
-        },
-    ],
-    "discount_hints": {
-        "IXB": "Cleartrip + Axis AXISCC (~₹1,090 off) or EMTFIRST on EaseMyTrip",
-        "DBR": "Cleartrip + Axis AXISCC (~₹1,500 off)",
-        "PXN": "Book direct on IndiGo/Star Air; check EMTFIRST on EaseMyTrip",
-    },
+    "routes": [],
+    "discount_hints": {},
     "last_checked_at": None,
 }
 

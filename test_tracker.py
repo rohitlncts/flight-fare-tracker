@@ -145,10 +145,42 @@ class TestTelegramPoll(unittest.TestCase):
         self.assertIn("How to add routes", msg)
 
     @patch("state_manager.save_config")
-    def test_handle_remove_route(self, mock_save):
-        msg = telegram_poll.handle_remove_route("/remove 1", self.config)
-        self.assertIn("Removed route #1", msg)
+    def test_handle_delete_route(self, mock_save):
+        self.config["routes"] = [
+            {"from": "BLR", "to": "IXB", "start_date": "2026-11-10", "end_date": "2026-11-13"},
+            {"from": "PXN", "to": "BLR", "start_date": "2027-01-05", "end_date": "2027-01-05"},
+            {"from": "DBR", "to": "BLR", "start_date": "2027-01-05", "end_date": "2027-01-05"},
+        ]
+        # Delete by index
+        msg = telegram_poll.handle_delete_route("/delete 1", self.config)
+        self.assertIn("Deleted 1 route", msg)
+        self.assertEqual(len(self.config["routes"]), 2)
+
+        # Delete by airports
+        msg2 = telegram_poll.handle_delete_route("/delete PXN BLR", self.config)
+        self.assertIn("Deleted route", msg2)
+        self.assertEqual(len(self.config["routes"]), 1)
+
+        # Delete all
+        msg3 = telegram_poll.handle_delete_route("/delete all", self.config)
+        self.assertIn("All 1 monitored routes deleted", msg3)
         self.assertEqual(len(self.config["routes"]), 0)
+
+    @patch("state_manager.save_config")
+    def test_handle_delete_route_multiple_indices(self, mock_save):
+        self.config["routes"] = [
+            {"from": "BLR", "to": "IXB", "start_date": "2026-11-10", "end_date": "2026-11-13"},
+            {"from": "BLR", "to": "DBR", "start_date": "2026-11-10", "end_date": "2026-11-13"},
+            {"from": "PXN", "to": "BLR", "start_date": "2027-01-05", "end_date": "2027-01-05"},
+        ]
+        msg = telegram_poll.handle_delete_route("/delete 1 2", self.config)
+        self.assertIn("Deleted 2 route", msg)
+        self.assertEqual(len(self.config["routes"]), 1)
+        self.assertEqual(self.config["routes"][0]["from"], "PXN")
+
+    def test_handle_delete_route_empty_help(self):
+        msg = telegram_poll.handle_delete_route("/delete", self.config)
+        self.assertIn("How to delete routes", msg)
 
     @patch("telegram_poll.send_telegram")
     def test_acknowledge_command(self, mock_send):
