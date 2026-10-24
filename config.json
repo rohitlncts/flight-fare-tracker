@@ -1,37 +1,6 @@
 {
   "is_paused": true,
-  "routes": [
-    {
-      "from": "BLR",
-      "to": "IXB",
-      "start_date": "2026-11-10",
-      "end_date": "2026-11-13"
-    },
-    {
-      "from": "BLR",
-      "to": "DBR",
-      "start_date": "2026-11-10",
-      "end_date": "2026-11-13"
-    },
-    {
-      "from": "BLR",
-      "to": "PXN",
-      "start_date": "2026-11-10",
-      "end_date": "2026-11-13"
-    },
-    {
-      "from": "PXN",
-      "to": "BLR",
-      "start_date": "2027-01-05",
-      "end_date": "2027-01-05"
-    },
-    {
-      "from": "DBR",
-      "to": "BLR",
-      "start_date": "2027-01-05",
-      "end_date": "2027-01-05"
-    }
-  ],
+  "routes": [],
   "discount_hints": {
     "IXB": "Cleartrip + Axis AXISCC (~\u20b91,090 off) or EMTFIRST on EaseMyTrip",
     "DBR": "Cleartrip + Axis AXISCC (~\u20b91,500 off)",
