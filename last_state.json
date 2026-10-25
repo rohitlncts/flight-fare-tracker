@@ -66,5 +66,8 @@
     "price": 11121,
     "airline": "IndiGo",
     "stops": 1
+  },
+  "IXR:BLR:2026-11-20": {
+    "error": "list index out of range"
   }
 }
